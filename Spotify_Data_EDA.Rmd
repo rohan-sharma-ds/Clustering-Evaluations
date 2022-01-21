@@ -1,0 +1,727 @@
+---
+title: "Spotify Song Data Analysis"
+date: "November 2, 2021"
+output:
+  html_document:
+    toc: true # table of content true
+    toc_depth: 5  # upto three depths of headings (specified by #, ## and ###)
+    #number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+
+
+
+
+
+<img align="centre" width="80%" height="40%" src="https://storage.googleapis.com/pr-newsroom-wp/1/2021/09/ehance-video-cover.png">
+
+
+<br>
+
+
+# The Case for Augmenting User Experience by Studying Song Associations
+
+<br>
+
+## Introduction
+The world of media arts consumption has gone through dramatic changes over these past 30 years. In this new era of instant & boundless content access, everything from the projects that get produced, the way they are produced, and the user experience have gone through astounding metamorphosis. Media companies that have risen to the top and managed to stay are those who understood early on that user attraction & retention is the single most important pillar to success. 
+
+Netflix's provides a perfect illustration of this. They have consistently prioritized refining their original content creation process and sophisticated suggestion algorithms in spite of the naysayers resoundingly ensuring the company's demise. After 23 years of consistent quarterly debt raising, negative net income & terrible financial health ratios, it did not take long for the great majority of analysts to think Netflix was in severe crash-and-burn trouble. This year, Netflix made an [announcement](https://www.nytimes.com/2021/01/19/business/netflix-earnings-debt.html) of major implications to the media industry: they no longer require any more rounds of borrowed capital to keep operations going. This means, should everything continue as it has, they are in an excellent position to service their debt, have budget for their extravagant productions AND start building tangible profit. The "risk" they took for putting the user experience first after so many years has literally paid out. They have taken their rightful position as the streaming audiovisual content powerhouse because of it.
+
+Inspired by this, we have chosen to examine Spotify's data repository to explore the song attributes they choose to capture and construct a scoring measure by which to group songs together and use it as a base for song recommendations.
+
+The relevance of this exploration is two-fold. Spotify's user experience offering is largely dependent on song curation & opening multiple avenues by which the user can explore new music they will actually like. In that sense, deep-diving into the trends & characteristics that associate certain songs to others will propulse Spotify's ability to accurately churn out music recommendations and streamline their vetting process of where to post new songs as these get added to the platform. 
+
+On the other side, this study means precious insight to those in the music creation side of the picture. The plethora of avenues available to post & to find new music leaves up-and-coming artists with no choice but to pay others to figure out a marketing strategy, or otherwise go years without finding a solid way to gain listeners. Our study provides a simplified approach to remedy that: a scoring system that allows anyone to understand the musical characteristics that a given song boils down to & the type of music associated to these base attributes. This information can be capitalized by the creator to find the venues and platforms were these associated songs have presence and take a share in those markets. A creator can also gain understanding of how to manipulate their content to achieve a desired musical association. In general, these types of multifaceted insights are usually guarded by label executives. This study enables the artist to take back some of that control. 
+<br><br>
+
+## Data Preparation
+
+<br>
+
+<!-- Installing the packages if they do not exist in the executing system -->
+```{r Install_Packages, echo=FALSE, warning=FALSE}
+required_packages <- c("knitr", "kableExtra", "tidyverse", "dplyr","cowplot", "gridExtra","corrplot")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages, repos = "http://cran.us.r-project.org")
+```
+
+The [Spotify Web API](https://developer.spotify.com/documentation/web-api/) provides artist, album, and track data, as well as audio features and analysis, all easily accessible via the R package [spotifyr](https://github.com/charlie86/spotifyr).
+
+It’s likely that Spotify uses these features to power products like Spotify Radio and custom playlists like Discover Weekly and Daily Mixes.  Spotify has the benefit of letting humans create relationships between songs and weigh in on genre via listening and creating playlists. 
+<br><br>
+
+#### Libraries and Data Input ####
+<br>
+```{r Import_Packages, message=FALSE,warning=FALSE}
+library(knitr) # Used to create a document that is a mixture of text and some chunks of code
+library(kableExtra) #Used for enhancing the aesthetics of the table outputs in the document
+library(tidyverse) #Used for faster and easier Data manipulation and Wrangling tasks
+library(dplyr) #Used for faster and easier Data manipulation and Wrangling tasks
+library(cowplot)
+library(gridExtra)
+library(lubridate)
+library(corrplot)
+```
+
+There are 23 audio features for each track, including confidence measures like `acousticness`, `liveness`, `speechiness and instrumentalness`, perceptual measures like `energy`, `loudness`, `danceability` and `valence` (positiveness), and descriptors like `duration`, `tempo`, `key`, and `mode`.
+
+A brief description of the variables is as mentioned below:
+
+```{r data_desc, warning = FALSE, message = FALSE}
+url <- 'https://raw.githubusercontent.com/vpcincin/DataWrangling/main/Data_Dictionary.csv'
+spotify_dictionary <- readr::read_csv(url)
+kable(spotify_dictionary[, ], format = "simple")
+```
+<br><br>
+
+**Read the data into dataframe**
+```{r read_data, warning=FALSE, message=FALSE}
+#Ceating the "spotify_songs" dataframe below by reading the data from github
+spotify_songs <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv')
+```
+
+The Data is scraped for `2021-01-21` i.e week 4 of 2020. 
+<br><br>
+
+#### Dimension of Data ####
+The dataset has 32833 records at a Track-Genre-Artist level and 23 variables.
+
+```{r dataset_dimensions, message=FALSE,warning=FALSE}
+dim(spotify_songs)
+```
+<br>
+
+#### Null Values in the Dataset ####
+<br>
+Surprisingly, there are only a total of 15 Null values in the 32833 X 23 dataframe, which is amazing considering it is a real dataset. When we deep dived into the null values across columns we see that - `trac_artist`, `track_name` and `track_album_name` have 5 Null values each.
+
+```{r nulls_overall, message=FALSE,warning=FALSE}
+#getting the count of total null values in data 
+sum(is.na(spotify_songs))
+```
+
+```{r nulls_by_columns, message=FALSE,warning=FALSE}
+#getting null values by columns
+colSums(is.na(spotify_songs))
+```
+<br>
+
+### Data Cleaning ###
+<br>
+
+#### Variable Names 
+We looked at the names of all columns to check if the names are intuitive and if they follow a uniform naming convention , one commonly used in R. We decided to use **snake case** throughout the project. 
+
+```{r check_var_names , message=FALSE,warning=FALSE}
+#printing variable names
+names(spotify_songs)
+```
+The Variable names look consistent and easy to interpret, hence there is no need for any variable name change.
+<br><br>
+
+#### Variable Types 
+It is vital to have the correct data type for each column prior to any analysis. Hence, we used *str()*  to observe the data types of each column and changed the data type wherever necessary. Below are the observations:
+
+```{r spotify_structure, message= FALSE,warning= FALSE}
+# checking variable types for consistencies 
+str(spotify_songs[])
+```
+
+<br>
+**Observations:** 
+
+- `mode` currently has a numeric field, however it is a factor/Boolean variable, as it has values{0,1}. 
+- `track_album_release_date`is currently a character column but its actually a field with date values; Its vital to change this as we would need this column in date format for analysis- Example: Time series plots, Y-o-Y growth analysis,etc.
+<br><br>
+Thus, in the following section of code, we manually change the datatypes for the two columns to the required type.
+<br>
+
+```{r modify_data_types, message=FALSE,warning=FALSE}
+#Modyfying Data types
+spotify_songs$mode <- as.factor(spotify_songs$mode)
+spotify_songs$track_album_release_date <- as.Date(spotify_songs$track_album_release_date)
+```
+We can confirm that the conversion of data type has reflected in the data.
+
+```{r confirm_data_type_change, message= FALSE,warning= FALSE}
+#QC step
+class(spotify_songs$mode)
+class(spotify_songs$track_album_release_date)
+```
+<br>
+
+#### Missing Value Treatment
+<br>
+We had earlier seen that we had 5 missing values each in track_artist, track_album_name and track_name. We impute these missing values with a character constant 'unknown'. Further, these missing values do not pose a serious threat to any of the analysis that we expect to oerform in the future. This is because of two primary reasons - a) It is a small fraction in our dataset b) We still have a lot of information for these records that we can use for our EDA
+<br>
+
+```{r missing_value_imputation, message=FALSE,warning=FALSE}
+#Missing Value Treatment
+spotify_songs$track_artist[is.na(spotify_songs$track_artist)] <- 'unknown'
+spotify_songs$track_album_name[is.na(spotify_songs$track_album_name)] <- 'unknown'
+spotify_songs$track_name[is.na(spotify_songs$track_name)] <- 'unknown'
+```
+We see now that we do not have any missing values in our data.
+<br>
+```{r nulls_after_MVT, message=FALSE,warning=FALSE}
+#QC step
+sum(is.na(spotify_songs))
+```
+<br>
+
+#### Numeric and Visual Summary
+Looking at the summary of the numeric data provides us a high-level understanding of data distribution and centrality. While glancing through the summary, we can also quickly get an idea about which columns to thoroughly inspect for outliers.
+<br>
+```{r numeric_summary, message=FALSE,warning=FALSE}
+#Generating summary
+summary(select_if(spotify_songs,is.numeric))
+```
+From the descriptive statistics of the numeric variables that we obtained above, we see that for some variables the mean is not very close to the median, which indicates the skewness in the data and further hints towards the possibility of potential outliers. We also can get an idea of whether the outlier is towards the lower bound or the upper bound in the data, i.e Right skewness (Mean > Median) suggests outliers towards the upper bound and Left skewness (Mean < Median) suggests that the outliers are towards the lower bound.
+<br>
+
+To further check if the variables have outliers in the data we plot the distribution of these variables using boxplots (In the visual summary secion)
+
+For the character variables, we explore the number of levels/distinct value in each variable.
+<br>
+
+```{r character_unique_vars, message=FALSE,warning=FALSE}
+#checking levels for character variables
+ulst <- lapply(select_if(spotify_songs,is.character),unique)
+k <- lengths(ulst)
+k
+```
+**Concerns from observation above:**
+
+- track_id and track_name have different number of unique values
+- The data is not at track_id level; Track_id's are repeated
+
+**Visual Summary**
+
+The box plots of variables will be helpful in outlier detection. In the analysis above, we observe that: few columns have the mean pulled towards on side due to outliers or skewness. Here we will be checking the boxplots of these variables to identify outliers and subsequently device a strategy to treat them.
+
+```{r plot_boxplots , message=FALSE,warning=FALSE}
+#Generating boxplots
+boxplot(spotify_songs$danceability, main = 'Boxplot distribution of Danceability')
+boxplot(spotify_songs$loudness, main = 'Boxplot distribution of loudness')
+boxplot(spotify_songs$tempo , main = 'Boxplot distribution of tempo')
+
+```
+
+#### Outlier Detection and Treatment
+From the boxplot distributions we see that the variable danceability has one value at 0, which stands out from the remaining of the variable. Similarly in loudness there is one value that is very low '-46' and in tempo there is one value that is too high and one value that is too low than the majority of data points.
+
+We can remove these records, to trim tails of these variables. As these are just a couple of records, it would not be harmful in terms of data loss and it is safe to remove these records from the dataset and visualize the dataset again to see the change in distribution.
+
+```{r trim_outliers, message=FALSE,warning=FALSE}
+#Trimming Outliers 
+new_df <- subset(spotify_songs, danceability > min(danceability) & loudness > min(loudness) & tempo > min(tempo) & tempo < max(tempo))
+```
+
+```{r plot_boxplot_2, message=FALSE,warning=FALSE}
+#Visualizing the distributions again
+boxplot(new_df$danceability, main = 'Distribution of Danceability')
+boxplot(new_df$loudness, main = 'Distribution of loudness')
+boxplot(new_df$tempo , main = 'Distribution of tempo')
+```
+
+Thus, in Data Cleaning, we have checked the variable types, imputed the missing values, we checked the numerical summaries and detected and treated the outliers.
+
+The below table shows a glimpse of the final cleaned dataset.
+```{r show_cleaned_data}
+#printing head
+knitr::kable(head(new_df,5), "simple")
+```
+
+**Relevant Variables:**
+
+
+Since we are trying to build a recommendation engine to suggest similar songs to the Spotify user, we would need track attributes to characterize each track. Below are few potential variables that could be important to generate a similarity score for the tracks.
+<br>
+
+`track_artist`, `track_popularity`, `track_album_name`, `playlist_genre`, `playlist_subgenre`, `danceability`,`loudness`,`acousticness`, `tempo`, `liveness`, `duration_ms`
+
+<br>
+
+We plot the distributions of the variables of interest for our analysis. 
+<br>
+
+```{r hist_vars, message=FALSE,warning=FALSE}
+#histogram for variables of interest 
+hist(new_df$track_popularity, main = 'Distribution of Track Popularity', xlab = 'Track popularity', col = 'light blue')
+hist(new_df$danceability, main = 'Distribution of Dancebility', xlab = 'Danceability', col = 'light blue')
+
+hist(new_df$loudness, main = 'Distribution of loudness', xlab = 'loudness', col = 'light blue')
+```
+<br>
+The data has track duration in milliseconds which is too granular for us. Hence, we convert it to minutes and then plot the distribution. As expected, we see most tracks are between 3-5 minutes.
+```{r song_duration}
+#converting the song duration in minutes
+new_df$duration_min <- new_df$duration_ms/60000
+```
+```{r warning = FALSE, message=FALSE}
+hist(new_df$duration_min, main = 'Distribution of duration in mins', xlab = 'loudness', col = 'light blue')
+```
+
+However, We still have a few concerns with the data that we need to investigate prior to analysis:
+<br>
+**Concerns** {Mentioned above}
+
+- track_id and track_name have different number of unique values
+- The data is not at track_id level; Track_id's are repeated
+<br>
+
+## Exploratory Data Analysis (Proposed)
+
+The Spotify data is a rich dataset with playlist information from tracks ranging from 1905 to 2020. To deep dive into the data and look for interesting trends, we can look at the dataset by aggregating it into different levels- this would give us a feel of the data distribution at different levels. For our EDA, we will be considering the following cuts/levels that may help us to answer all/some of the following brainstormed business questions -
+
+1. **Overall level:**
+
+  + What is the depth and breadth of Spotify dataset?
+  + How diverse is the Spotify dataset?
+  + What are the most popular words used in track names in Spotify data?
+  + What is the split between individual tracks, dual tracks, and bands?
+  
+2. **By Genre:**
+  + What attributes differentiates the genres?
+  + What is the most/least popular genre?
+  + Are more artists choosing a specific type of genre?
+  + Which is the most popular album by Genre?
+  + Are there multiple genres that typically go along well?
+
+3. **By Artist:**
+
+  + Who is the most popular artist?
+  + Do artists generally stick to one kind of genre or explore multiple genres? If yes, how many do so?
+  + Which artist has the greatest number of songs?
+  + What is the average time gap between 2 songs by an artist?
+
+4. **By Popularity** (We plan to create a categorical feature – Popularity category: High, Medium, Low based on popularity score)
+
+  + Are there specific attributes in the data that lead to higher/lower popularity?
+
+5. **By Year/Month**
+
+  + How have the attributes evolved over time? 
+  + Are more popular songs from older times or recent times? Or does time have no effect on popularity?
+  + Is releasing in any specific month/(s) better for a track/album (in terms of popularity)?
+  
+## Slicing, Dicing & Features Engineering
+<br>
+To answer all/some of the questions above, we must slice and dice the data and look at them from multiple dimensions. The dataset seems to be at a Track-Artist-Genre level and has various metrics for each track. However, to be able to track how well a certain song did for an artist, we need to look at performance in comparison to other tracks the same artist/genre – ‘Relative Metric’. For this, we plan to create aggregated views of the data at Artist and Genre level with fields like -: 
+
+The following shows a glimpse of the types of views we are considering to asnswer the key business questions -
+
+
+
+<img align="centre" width="100%" height="100%" src="https://github.com/vpcincin/DataWrangling/raw/main/MicrosoftTeams-image.png">
+
+
+
+
+<br>
+
+We further intend to engineer features for relative track performance by joining the aggregated views with the data set: <br>
+
+*Artist_Relative_[Metric] = Metric / Artist_Average_Metric* <br>
+*Genre_Relative_[Metric] = Metric / Genre_Average_Metric*
+
+We will add these metrics to the EDA mentioned above to get a better relative understanding of the track and its performance.
+
+<br>
+
+#### Plots & Tables Required
++  To create the time series plots to observe trends over time, we will be utilizing line graphs in R
+  -  Could also plot time series box plots- Need to check feasibility in R
++  To spot outliers in the data, we will be using dotplots with quantiles
++  For plotting relationships/ pair plots we are going to use dotplots to observe distribution and trends.
+
+#### ML techniques
+We plan to create a recommendation engine using the data set provided. The engine would take as input a list of tracks a user listens to, and leverage that to predict ‘Similar’ songs that the user ‘might’ like.
+
+#### Learning Gap
++  We still need to learn to how to calculate similarity scores in R – to be used for recommendation engine.
++  We also want to use time series box plots. Need to check feasibility in R. If feasible, need to learn how to create in R.
+
+
+## Exploratory Data Analysis (Implementation):
+
+#### Overall Level
+The overall level provides an overview of diversity in spotify dataset. It tells us about the variety of genres, artists and tracks in the data. Ot further gives us a sense of overall track parameters like Danceability, Loudness etc.
+
+```{r overall}
+overall <- new_df %>% summarise(
+  No_of_tracks = length(unique(track_id)),
+  No_of_genres = length(unique(playlist_genre)),
+  No_of_Artists = length(unique(track_artist)),
+  avg_popularity = mean(track_popularity, na.rm = TRUE),
+  avg_duration = mean(duration_min, na.rm = TRUE),
+  avg_danceability = mean(danceability, na.rm = TRUE),
+  avg_loudness = mean(loudness, na.rm = TRUE),
+  avg_energy = mean(energy, na.rm = TRUE),
+  avg_key = mean(key, na.rm = TRUE),
+  avg_speechiness = mean(speechiness, na.rm = TRUE),
+  avg_acousticness = mean(acousticness, na.rm = TRUE),
+  avg_instrumentalness = mean(instrumentalness, na.rm = TRUE),
+  avg_liveness = mean(liveness, na.rm = TRUE),
+  avg_valence = mean(valence, na.rm = TRUE),
+  avg_tempo = mean(tempo, na.rm = TRUE)
+)
+```
+
+
+```{r overall_print}
+knitr::kable(head(overall), "simple")
+```
+
+#### Genre Level
+After looking at the parameters at the entire dataset level, we now split and look by different genres. The hypothesis we have is that the genres should be distinguishable based on its song parameters.
+
+```{r genre}
+Genre_level <- new_df %>% group_by(playlist_genre) %>% 
+              summarise(No_of_tracks = length(unique(track_id)),
+  No_of_Artists = length(unique(track_artist)),
+  avg_popularity = mean(track_popularity, na.rm = TRUE),
+  avg_duration = mean(duration_min, na.rm = TRUE),
+  avg_danceability = mean(danceability, na.rm = TRUE),
+  avg_loudness = mean(loudness, na.rm = TRUE),
+  avg_energy = mean(energy, na.rm = TRUE),
+  avg_key = mean(key, na.rm = TRUE),
+  avg_speechiness = mean(speechiness, na.rm = TRUE),
+  avg_acousticness = mean(acousticness, na.rm = TRUE),
+  avg_instrumentalness = mean(instrumentalness, na.rm = TRUE),
+  avg_liveness = mean(liveness, na.rm = TRUE),
+  avg_valence = mean(valence, na.rm = TRUE),
+  avg_tempo = mean(tempo, na.rm = TRUE))
+    
+```
+
+```{r genre_print}
+knitr::kable(head(Genre_level), "simple")
+```
+
+We can verify our hypothesis from the table above. Notable observations are -
+
+* Rap has the highest speechiness
+* Electronic Dance Music has the least loudness
+* Electronic Dance Music has the highest energy
+* Rythm and Blues has lowest tempo
+* Electronic Dance Music has the highest instrumentalness
+
+
+#### Artist level
+We look at the same metrics at an artist level. Although we have over 10000 artists, the table could be useful in identifying top 10 and bottom 10 artists. Further, it can help us look up information about an artist of our choice.
+
+```{r artist}
+Artist_level <- new_df %>% group_by(track_artist) %>% 
+              summarise(No_of_tracks = length(unique(track_id)),
+  avg_popularity = mean(track_popularity, na.rm = TRUE),
+  avg_duration = mean(duration_min, na.rm = TRUE),
+  avg_danceability = mean(danceability, na.rm = TRUE),
+  avg_loudness = mean(loudness, na.rm = TRUE),
+  avg_energy = mean(energy, na.rm = TRUE),
+  avg_key = mean(key, na.rm = TRUE),
+  avg_speechiness = mean(speechiness, na.rm = TRUE),
+  avg_acousticness = mean(acousticness, na.rm = TRUE),
+  avg_instrumentalness = mean(instrumentalness, na.rm = TRUE),
+  avg_liveness = mean(liveness, na.rm = TRUE),
+  avg_valence = mean(valence, na.rm = TRUE),
+  avg_tempo = mean(tempo, na.rm = TRUE))
+```
+
+```{r artist_print}
+knitr::kable(head(Artist_level), "simple")
+```
+
+#### Year level
+We wanted to next look at the metrics over time. Looking at an year-wise trend helps understand how the music industry itself has progressed over time with respect to the song parameters. Further, it also provides insights on which years/decades were most tracks released. 
+
+```{r year}
+Year_level <- new_df %>% group_by(format(track_album_release_date, format = "%Y")) %>% 
+              summarise(No_of_tracks = length(unique(track_id)),
+  avg_popularity = mean(track_popularity, na.rm = TRUE),
+  avg_duration = mean(duration_min, na.rm = TRUE),
+  avg_danceability = mean(danceability, na.rm = TRUE),
+  avg_loudness = mean(loudness, na.rm = TRUE),
+  avg_energy = mean(energy, na.rm = TRUE),
+  avg_key = mean(key, na.rm = TRUE),
+  avg_speechiness = mean(speechiness, na.rm = TRUE),
+  avg_acousticness = mean(acousticness, na.rm = TRUE),
+  avg_instrumentalness = mean(instrumentalness, na.rm = TRUE),
+  avg_liveness = mean(liveness, na.rm = TRUE),
+  avg_valence = mean(valence, na.rm = TRUE),
+  avg_tempo = mean(tempo, na.rm = TRUE))
+    
+```
+
+```{r year_print}
+knitr::kable(head(Year_level,5), "simple")
+```
+
+Some of the interesting trends are plotted below -
+
+<img align="centre" width="100%" height="100%" src="https://github.com/vpcincin/DataWrangling/raw/main/Year_0.png">
+
+<img align="centre" width="100%" height="100%" src="https://github.com/vpcincin/DataWrangling/raw/main/Year_1.png">
+
+<img align="centre" width="100%" height="100%" src="https://github.com/vpcincin/DataWrangling/raw/main/Year_2.png">
+
+The following observations can be made from the above table -
+
+* The number of tracks released suddenly bumped up since 2014. However, we see that in 2020 there is a sharp decline potentially due to the pandemic hitting hard on the music industry. 
+* The average popularity of tracks in the 21st century is less than the ones in the 20th century
+* The speechiness has increased over time
+* Acousticness has decreased over time
+* Loudness has increased over time
+* Liveness has increased over time
+<br>
+
+#### Genre Level - Deep Dive
+
+##### Comparison of Numeric Features across Genres
+The plots below show subtle distinctions in the Music parameters among the differnt genres.  
+
+```{r genre_numeric}
+
+#par(mfrow = c(2,2))
+
+plot1 <- ggplot(data = new_df, aes(x = playlist_genre, y = mean(danceability))) +
+  geom_bar(stat = 'identity', color = 'Light Blue')
+
+plot2 <- ggplot(data = new_df, aes(x = playlist_genre, y = mean(energy))) +
+  geom_bar(stat = 'identity', color = 'Light Blue')
+
+plot3 <- ggplot(data = new_df, aes(x = playlist_genre, y = mean(loudness))) +
+  geom_bar(stat = 'identity', color = 'Light Blue')
+
+plot4 <- ggplot(data = new_df, aes(x = playlist_genre, y = mean(speechiness))) +
+  geom_bar(stat = 'identity', color = 'Light Blue')
+
+grid.arrange(plot1, plot2,plot3, plot4, ncol = 2)
+
+```
+
+As we noted earlier,
+
+* Electronic Dance Music tops with respect to danceability and energy
+* Electronic Dance Music and Rap have higher speechiness
+* Rock has highest loudness
+
+
+#### Popularity of Genres
+We notice that Pop and Latin are most popular genres whereas Electronic Dance Music is the least popular genre
+
+```{r genre_popularity}
+new_df %>% 
+      group_by(playlist_genre) %>% 
+      summarize(mean_pop = mean(track_popularity)) %>% 
+      arrange(desc(mean_pop))
+
+```
+
+##### More Artist chossing specific genre
+Although  Electronic Dance Music has a low popularity, artists have generally liked playing it.
+
+```{r genre_specific_artists}
+new_df %>% 
+  group_by(playlist_genre) %>% 
+  summarise(Distinct_artist = length(unique(track_artist))) %>% 
+  arrange(desc(Distinct_artist))
+
+```
+
+
+#### Artist Level - Deep DIve
+
+##### Most Popular Artist
+Trevor Daniel's track has the highest popularity with a score of 97.
+
+```{r artist_popularity}
+
+new_df %>% 
+  group_by(track_artist) %>% 
+  summarise(max_pop = mean(track_popularity)) %>% 
+  mutate(rank_pop = dense_rank(desc(max_pop))) %>% 
+  filter(rank_pop == 1 )
+
+```
+
+
+##### Best Albums and Artists across all genres
+Dance Monkey was the most popular album.
+
+```{r best_albums, message=FALSE, warning=FALSE}
+new_df %>% 
+  group_by(playlist_genre, track_album_name, track_artist) %>% 
+  summarise(max_pop = max(track_popularity)) %>% 
+  mutate(rank_pop = dense_rank(desc(max_pop))) %>% 
+  filter(rank_pop == 1) %>% 
+  select(playlist_genre, track_album_name,track_artist, max_pop) %>% 
+  arrange(desc(max_pop))
+
+```
+
+From the above table we see that there are albums that fall under more than 1 genre. We deep dive to see how many albums and artists are part of different Genres.
+
+
+##### Number of Albums in each Genre
+We have ~12% of the albums that are categorized until multiple genres. 
+
+```{r N_albums}
+new_df %>%
+group_by(track_album_name) %>%
+ summarise(Number_of_Genre = length(unique(playlist_genre))) %>%
+ group_by(Number_of_Genre) %>%
+ summarise(track_album_name = n())
+```
+
+
+##### Number of Artists against Number of Genres
+~16% of the artists have released songs from multiple genres.
+
+```{r N_artists}
+new_df %>%
+group_by(track_artist) %>%
+ summarise(Number_of_Genre = length(unique(playlist_genre))) %>%
+ group_by(Number_of_Genre) %>%
+ summarise(No_of_artists = n())
+
+```
+
+##### Artist who has highest tracks
+Martin Garrix has the highest number of track releases with 73 tracks.
+
+```{r highest_tracks}
+
+new_df %>%
+group_by(track_artist) %>%
+summarise(Number_of_tracks = length(unique(track_album_id))) %>% 
+mutate(rank_songs = dense_rank(desc(Number_of_tracks))) %>% 
+filter(rank_songs == 1) %>% 
+select(track_artist, Number_of_tracks)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Extract the year
+# Bind the new year column to existing dataset
+Year= year(ymd(spotify_songs$track_album_release_date))
+Spotify_By_Year <- cbind(spotify_songs, Year)
+
+```
+
+#### Capturing the trend for the last 10 years
+Earlier, we saw the change in track parameters over decades. But the following charts show how much the music industry has changed within the last 10 years. Looking at this was of specific interest to us because the number of tracks released has increased drastically since 2014.
+
+```{r}
+# Function that filters data for past 10 years, computes the average across variables & returns a chart
+trend_chart <- function(arg){
+trend_change <- Spotify_By_Year %>% filter(Year>2010) %>% group_by(Year) %>% summarise_at(vars(all_of(arg)), list(Average = mean))
+chart<- ggplot(data = trend_change, aes(x = Year, y = Average)) + 
+     geom_line(color = "#00AFBB", size = 1) +
+    scale_x_continuous(breaks=seq(2011, 2020, 1)) + scale_y_continuous(name=paste("",arg,sep=""))
+return(chart)
+}
+
+# Plot grid for different song attributes across time (YoY)
+trend_chart_track_popularity<-trend_chart("track_popularity")
+trend_chart_danceability<-trend_chart("danceability")
+trend_chart_energy<-trend_chart("energy")
+trend_chart_loudness<-trend_chart("loudness")
+trend_chart_duration_ms<-trend_chart("duration_ms")
+trend_chart_speechiness<-trend_chart("speechiness")
+
+plot_grid(trend_chart_danceability, trend_chart_energy, trend_chart_loudness, trend_chart_duration_ms, trend_chart_speechiness,ncol = 2, label_size = 1)
+```
+
+*In the last 10 years:*
+
+* Tracks have increased speechiness and danceability
+* Tracks have decreased in loudness, energy and duratio
+* Thus, tracks released in recent years should have the commonalities of having a slower tempo, softer sound, good rhythm and more verbose. 
+* Tracks released in later half of the decade can also be characterized as louder, energetic, and long likely due to more instrumental solos
+
+
+#### Add a month column to the data set 
+```{r add_month, echo=FALSE, message=FALSE, warning=FALSE}
+Month= month(ymd(Spotify_By_Year$track_album_release_date))
+Spotify_By_Month_Year <- cbind(Spotify_By_Year, Month)
+```
+
+#### Is releasing a track in a particular month/period affect its popularity?    
+
+```{r}
+#Write a function to filter recent data and group by month
+monthly_chart <- function(arg){
+trend_monthly_change <- Spotify_By_Month_Year%>% filter(Year > 2010) %>% group_by(Month) %>% summarise_at(vars(all_of(arg)), list(Average = mean))
+chart2<- ggplot(data = trend_monthly_change, aes(x = Month, y = Average)) + 
+     geom_line(color = "#00AFBB", size = 1) +
+    scale_x_continuous(breaks=seq(1, 12)) + scale_y_continuous(name=paste("",arg,sep=""))
+return(chart2)
+}
+
+print(monthly_chart_track_popularity<-monthly_chart("track_popularity"))
+
+```
+<br>
+We can notice that the tracks released in the later half of the year tend to have a higher popularity score.
+
+#### Popularity category by popularity score
+
+
+```{r}
+new_df$pop_cat <- as.numeric(cut(new_df$track_popularity,breaks=3))
+new_df$pop_category <- ifelse(new_df$pop_cat==1, "Low", ifelse(new_df$pop_cat==2, "Medium", "High"))
+
+```
+
+#### Are there specific attributes in the data that lead to higher/lower popularity?
+```{r}
+
+new_df2 <- subset(new_df, select = -c(track_id, track_name,track_artist,track_album_id,track_album_name,track_album_release_date,playlist_id,playlist_name,playlist_genre,playlist_subgenre,mode,pop_category))
+
+corr_df <- cor(new_df2)
+
+head(corr_df,1)
+
+```
+
+#### Looking at averages of variables for which there is higher correlation seen with track_popularity
+
+```{r}
+
+new_df %>%
+  group_by(pop_category) %>%
+  summarise_at(vars(energy,instrumentalness,duration_min), funs(mean(., na.rm=TRUE)))
+
+```
+We do not see much relation in variation of energy, instrumentalness and duration leading to higher/lower scores in track popularity.
+
+
+## Summary and Conclusion 
+The entire Exploratory data analysis on Spotify dataset has been insightful in -
+
+
+
+* Understanding the different attributes defined for a track
+* Exploring the subtle differences in genres based on the different track attributes
+* Realizing the change in the music industry over time
+
+
+
+We hope the insights given in the previous sections have been informative. Given below is a summary of the findings that we have come across during the exploration of this dataset -
+
+
+
+* Electronic Dance Music is the genre in which most songs have been released, followed by rap, which has gained a lot of popularity in the 21st century
+* Electronic Dance Music has highest instrumentalness and energy while having lowest loudness
+* There has been a drastic shift in the number of tracks released since 2014. Further, the song paramters and its preference have changed over time.
+* There are very subtle differences between the different genres that can be identified by closely looking into their music paramters.
+* Pop is the most poular genre while Electronic Dance Music is the least popular
+* Trevor Daniel's track has the highest popularity (97)
+* Martin Garrix has the highest number of track releases with 73 tracks.
+* Dance Monkey was the best album in terms of popularity score
+* ~12% of the albums are categorized under multiple genres
+* ~16% of the artists have released songs from multiple genres
+* In the last 10 years, tracks have increased in their speechiness and danceability and decreased in loudness, energy and duration
+* Tracks release in the second half of the year generally have a higher popularity
